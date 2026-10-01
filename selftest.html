@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <!--
+    ページが読み込んでよい相手を絞る（CSP）。この動作テストのページは、自分のファイルしか読まない。
+    ★スクリプトは必ず別ファイルに置く（この HTML の中に書くと CSP で止まる。わざとそうしている）。
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>かぎばこ 動作テスト</title>
+  <script src="guard.js"></script>
+  <link rel="stylesheet" href="selftest.css">
+</head>
+<body>
+  <main>
+    <h1>かぎばこ　動作テスト</h1>
+    <p>スマホ版と同じ答え合わせを、このブラウザで行います。全部合格するまで、本物のパスワードを入れないでください。</p>
+    <p class="env" id="env"></p>
+    <button id="run" type="button">動作テストを始める</button>
+    <p class="summary" id="summary" role="status"></p>
+    <table>
+      <thead><tr><th>結果</th><th>分類</th><th>項目</th><th>時間</th><th>くわしく</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+  <script type="module" src="selftest-page.js"></script>
+</body>
+</html>

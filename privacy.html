@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>かぎばこ プライバシーポリシー</title>
+  <script src="guard.js"></script>
+  <link rel="stylesheet" href="page.css">
+</head>
+<body>
+  <main>
+    <h1>かぎばこ プライバシーポリシー</h1>
+    <p class="sub">2026年10月1日</p>
+
+    <p>かぎばこ（以下「このアプリ」）は、個人が自分のパスワードを管理するための道具です。
+      Android アプリと、このウェブページの2つがあり、どちらも同じ扱いをします。</p>
+
+    <h2>1. 作者に送られる情報はありません</h2>
+    <p>このアプリは、作者が運営するサーバーを使いません。マスターパスワード、保存した ID・パスワード・メモ、
+      端末の情報、使い方の記録（アクセス解析）は、作者を含むほかの誰にも送られません。
+      広告や解析のための仕組みも入っていません。</p>
+
+    <h2>2. 暗号化はお使いの端末の中で行います</h2>
+    <p>保存する内容は、お使いの端末の中で、マスターパスワードから作った鍵（PBKDF2-HMAC-SHA256）と AES-256-GCM によって暗号化されます。
+      マスターパスワードはどこにも保存されません。作者はこれを知る方法がなく、忘れた場合に復元することもできません。</p>
+
+    <h2>3. Google ドライブについて</h2>
+    <ul>
+      <li>暗号化したファイル（<code>kagibako-vault.json</code>）を、利用者ご自身の Google ドライブに置きます。中身は暗号化されたままで、Google にも作者にも読めません。</li>
+      <li>Google ドライブへのアクセスには、権限 <code>https://www.googleapis.com/auth/drive.file</code> だけを使います。
+        これは「このアプリが作った、または利用者が選んだファイル」だけを扱える権限で、ドライブにあるほかのファイルを見ることはできません。</li>
+      <li>Google から受け取る情報は、このファイルを読み書きするためのアクセストークンと、ファイルの番号・更新の記録（版の番号・日時）だけです。</li>
+      <li>Google API から受け取った情報の使用と、ほかのアプリへの転送は、
+        <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API サービスのユーザーデータに関するポリシー</a>（限定使用の要件を含む）に従います。
+        受け取った情報を、ほかの目的に使ったり、人に渡したり、売ったりすることはありません。</li>
+      <li>Google へのサインインは Google の画面で行われ、
+        <a href="https://policies.google.com/privacy">Google のプライバシーポリシー</a>が適用されます。</li>
+    </ul>
+
+    <h2>4. 端末に残るもの</h2>
+    <ul>
+      <li>ウェブページ: ブラウザの保存領域（localStorage）に、ファイルの番号・端末を見分けるための番号・暗号の計算に使う公開してよい値（salt と回数）だけを残します。暗号化した中身も平文も残しません。ページを閉じると、復号した内容はすべて消えます。Cookie は使いません。</li>
+      <li>Android アプリ: 電波の届かない場所でも見られるよう、暗号化したままのファイルを端末の中のアプリ専用の場所に残します。端末のバックアップや機種変更のコピーの対象からは外しています。</li>
+    </ul>
+
+    <h2>5. 連携をやめるとき</h2>
+    <p>Google アカウントの「サードパーティ製のアプリとサービス」から、かぎばこの連携を解除できます。
+      ドライブのファイルは、利用者ご自身が消すまで残ります。</p>
+
+    <h2>6. このポリシーの変更</h2>
+    <p>内容を変えるときは、このページを書き換え、日付を改めます。</p>
+
+    <h2 class="en">Summary in English</h2>
+    <p class="en">Kagibako is a personal password manager. It has no server and sends nothing to its author.
+      All encryption happens on your device; your master password is never stored or transmitted.
+      It uses only the <code>drive.file</code> scope to store a single encrypted file in your own Google Drive.
+      Kagibako's use and transfer of information received from Google APIs adheres to the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+      including the Limited Use requirements.</p>
+
+    <footer>連絡先: <a href="https://github.com/JSON0409">GitHub の JSON0409</a> ／ <a href="./">かぎばこ</a></footer>
+  </main>
+</body>
+</html>
