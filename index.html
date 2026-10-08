@@ -2,30 +2,183 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <!--
+    ページが読み込んでよい相手を絞る（CSP。仕様書 §9.3・改訂 R-22）。
+    スクリプトは自分のファイルと Google のログイン部品（accounts.google.com/gsi/client）だけ、
+    通信は Google ドライブと Google のログイン部品の窓口（/gsi/）だけ。
+    ★スクリプトも見た目も、この HTML の中には書かない（書くと CSP で止まる。わざとそうしている）。
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self'; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
   <title>かぎばこ</title>
   <script src="guard.js"></script>
-  <link rel="stylesheet" href="page.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="stylesheet" href="app.css?v=20261003c">
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script type="module" src="app.js?v=20261003c"></script>
 </head>
 <body>
-  <main>
+  <div id="testBanner" class="testbanner" hidden></div>
+  <!-- 読み上げ用（見た目には出さない） -->
+  <div id="live" class="sr" role="status" aria-live="polite"></div>
+
+  <!-- W-1 開く -->
+  <section id="unlock" class="unlock">
+    <img src="icon-192.png" alt="" class="logo" width="88" height="88">
     <h1>かぎばこ</h1>
-    <p class="sub">個人用のパスワード管理アプリ（準備中）</p>
+    <!--
+      ★autocomplete="one-time-code": ブラウザの「パスワードを保存しますか？」にマスターパスワードを拾わせない（改訂 R-22）。
+        type=password は残す（日本語入力が止まる・伏せ字・欄からコピーできない、という守りのため）
+    -->
+    <form id="unlockForm" class="unlockform" autocomplete="off">
+      <label for="pw">マスターパスワード</label>
+      <div class="pwrow">
+        <input id="pw" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off">
+        <button type="button" id="pwShow" class="ghost">表示</button>
+      </div>
+      <button id="openBtn" type="submit" class="primary">ひらく</button>
+    </form>
+    <p id="unlockStatus" class="status" role="status" aria-live="polite"></p>
+    <p class="hint">はじめて使うときは、Google の画面が出ます。いつものアカウント（スマホのかぎばこと同じもの）を選んで「続行」を押してください。</p>
+    <p class="hint">ブラウザに「パスワードを保存しますか？」と聞かれたら、「使用しない」を押してください。保存すると、Google アカウントだけで金庫が開けるようになってしまいます。</p>
+    <p class="links">
+      <button type="button" id="chooseAccount" class="link">Google アカウントを選び直す</button>
+      <button type="button" id="forgetFile" class="link" hidden>金庫のファイルを探し直す</button>
+    </p>
+    <div class="about">
+      <p>かぎばこは、ID とパスワードをマスターパスワードで暗号化して、あなたの Google ドライブにしまっておく道具です。
+        Android アプリと、このパソコン用のページの両方から、同じファイルを読み書きします。
+        暗号化と復号はすべてこの端末の中で行い、マスターパスワードやパスワードが、作者を含むほかの誰かに送られることはありません。
+        このページは、金庫の中身をパソコンに残しません（タブを閉じると、開いた中身は消えます）。</p>
+      <p><a href="privacy.html">プライバシーポリシー</a> ・ <a href="terms.html">利用規約</a> ・ <a href="selftest.html">動作テスト</a> ・ <a href="https://github.com/JSON0409">連絡先（GitHub）</a></p>
+    </div>
+  </section>
 
-    <p>ID とパスワードを、マスターパスワードで暗号化した1つのファイルにまとめて、自分の Google ドライブに置いておく道具です。
-      Android アプリと、このパソコン用のページの両方から、同じファイルを読み書きします。</p>
-    <p>暗号化と復号は、すべてお使いの端末の中で行います。マスターパスワードやパスワードが、作者を含むほかの誰かに送られることはありません。</p>
+  <!-- W-2 一覧と詳細 -->
+  <section id="main" class="main" hidden>
+    <header class="topbar">
+      <span class="appname">かぎばこ</span>
+      <span class="spacer"></span>
+      <button id="addBtn" type="button" class="primary small">＋ 追加</button>
+      <button id="settingsBtn" type="button" class="ghost small">設定</button>
+      <button id="lockBtn" type="button" class="ghost small">🔒 ロック</button>
+    </header>
+    <!-- W-3 つなぎ直す帯 -->
+    <div id="authBand" class="band warn" hidden>
+      <span id="authText"></span>
+      <button id="reconnectBtn" type="button" class="primary small">つなぎ直す</button>
+    </div>
+    <div id="skewBand" class="band warn" hidden></div>
+    <div class="panes">
+      <div class="left">
+        <input id="search" type="search" aria-label="さがす" placeholder="さがす（サイト名・ID・URL・メモ）" autocomplete="off" spellcheck="false">
+        <div class="syncrow">
+          <button id="syncBar" type="button" class="syncbar"></button>
+          <span id="tokenLeft" class="muted small"></span>
+        </div>
+        <ul id="list" class="list" aria-label="一覧"></ul>
+        <p id="listEmpty" class="muted empty" hidden></p>
+      </div>
+      <div id="detail" class="right"></div>
+    </div>
+    <div id="copyBanner" class="copybanner" hidden>
+      <span id="copyText"></span>
+      <button id="copyClear" type="button" class="ghost small">いま消す</button>
+    </div>
+    <footer class="note">
+      <p>ブラウザの決まりで、ほかの画面に移ると、コピーしたパスワードを自動で消せないことがあります。</p>
+      <p class="keys">キー操作: 文字を打つ → さがす ／ ↑↓ 選ぶ ／ Enter パスワードをコピー ／ Shift+Enter ID をコピー ／ Alt+V パスワードの表示 ／ Alt+N 追加 ／ Esc 検索を消す → もう一度でロック</p>
+    </footer>
+  </section>
 
-    <h2>リンク</h2>
-    <ul>
-      <li><a href="privacy.html">プライバシーポリシー</a></li>
-      <li><a href="terms.html">利用規約</a></li>
-      <li><a href="selftest.html">動作テスト</a>（このブラウザで暗号の計算が正しく動くかを確かめるページ）</li>
-    </ul>
+  <!-- W-4 編集・新規 -->
+  <dialog id="editDlg" class="dlg wide" aria-labelledby="editTitle">
+    <form id="editForm" method="dialog" autocomplete="off">
+      <h2 id="editTitle">新しく追加</h2>
+      <label for="fTitle">サイト名（必ず）</label>
+      <input id="fTitle" type="text" autocomplete="off" spellcheck="false">
+      <label for="fLogin">ID（メールアドレスなど）</label>
+      <input id="fLogin" type="text" autocomplete="off" spellcheck="false" autocapitalize="off">
+      <label for="fPass">パスワード</label>
+      <div class="pwrow">
+        <!-- ★one-time-code: 各項目のパスワードを、ブラウザのパスワード帳に写させない（改訂 R-22） -->
+        <input id="fPass" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off">
+        <button type="button" id="fPassShow" class="ghost">表示</button>
+      </div>
+      <div class="genrow">
+        <button type="button" id="fGen" class="ghost">🎲 作る（20文字）</button>
+        <label class="check"><input id="fNoSym" type="checkbox"> 記号なし</label>
+      </div>
+      <label for="fUrl">URL（なくてもよい）</label>
+      <input id="fUrl" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" inputmode="url">
+      <label for="fMemo">メモ（なくてもよい）</label>
+      <!-- ★spellcheck="false": ブラウザのスペルチェック（ネット経由のものもある）にメモの中身を送らない -->
+      <textarea id="fMemo" rows="4" autocomplete="off" spellcheck="false"></textarea>
+      <div class="buttons">
+        <button type="button" id="editCancel" class="ghost">やめる</button>
+        <button type="submit" id="editSave" class="primary">保存する</button>
+      </div>
+    </form>
+  </dialog>
 
-    <footer>連絡先: <a href="https://github.com/JSON0409">GitHub の JSON0409</a></footer>
-  </main>
+  <!-- お知らせ・確かめ・競合・同じ名前が2つ・設定 -->
+  <dialog id="msgDlg" class="dlg" aria-labelledby="msgText">
+    <p id="msgText" class="pre"></p>
+    <div class="buttons"><button type="button" id="msgOk" class="primary">わかりました</button></div>
+  </dialog>
+
+  <dialog id="confirmDlg" class="dlg" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <h2 id="confirmTitle"></h2>
+    <p id="confirmText" class="pre"></p>
+    <div class="buttons">
+      <button type="button" id="confirmNo" class="ghost"></button>
+      <button type="button" id="confirmYes" class="primary"></button>
+    </div>
+  </dialog>
+
+  <dialog id="conflictDlg" class="dlg" aria-labelledby="conflictTitle" aria-describedby="conflictText">
+    <h2 id="conflictTitle"></h2>
+    <div id="conflictText"></div>
+    <div class="buttons column">
+      <button type="button" id="conflictReload" class="ghost"></button>
+      <button type="button" id="conflictOverwrite" class="ghost"></button>
+      <button type="button" id="conflictLater" class="primary">あとで決める</button>
+    </div>
+  </dialog>
+
+  <dialog id="multiDlg" class="dlg" aria-labelledby="multiTitle">
+    <h2 id="multiTitle">同じ名前の金庫が見つかりました</h2>
+    <p>どちらを使いますか？ スマホのかぎばこの設定に出ている「最後に Google ドライブとそろえた時刻」に近い方を選んでください。
+      選ばなかった方は、触らずにそのまま残します（あとで設定から選び直せます）。</p>
+    <div id="multiList" class="buttons column"></div>
+    <div class="buttons"><button type="button" id="multiCancel" class="ghost">やめる</button></div>
+  </dialog>
+
+  <dialog id="settingsDlg" class="dlg" aria-labelledby="settingsTitle">
+    <h2 id="settingsTitle">設定</h2>
+    <label for="sLock">自動ロック（操作しないで、この時間がたったら鍵をかける）</label>
+    <select id="sLock">
+      <option value="0">タブを離れたらすぐ</option>
+      <option value="60000">1分</option>
+      <option value="300000">5分（おすすめ）</option>
+      <option value="900000">15分</option>
+    </select>
+    <label for="sClip">コピーしたものを消すまで</label>
+    <select id="sClip">
+      <option value="15">15秒</option>
+      <option value="30">30秒（おすすめ）</option>
+      <option value="60">60秒</option>
+      <option value="120">2分</option>
+    </select>
+    <p class="muted small">※ Windows の「クリップボードの履歴」（Win+V）には、消したあとも残ることがあります。気になるときは、Windows の設定でクリップボードの履歴をオフにしてください。</p>
+    <h3>金庫の情報</h3>
+    <ul id="sInfo" class="info"></ul>
+    <p><button type="button" id="sForgetFile" class="link">鍵をかけて、金庫のファイルを選び直す（同じ名前が2つあるとき）</button></p>
+    <p><a href="selftest.html" target="_blank" rel="noopener">動作テスト（暗号の答え合わせ）</a></p>
+    <div class="buttons"><button type="button" id="settingsClose" class="primary">閉じる</button></div>
+  </dialog>
 </body>
 </html>

@@ -31,4 +31,24 @@ a { color: var(--accent); }
 ul { padding-left: 1.4em; }
 code { font-size: 0.92em; }
 footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
+button {
+  font: inherit;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+button:disabled { opacity: .6; cursor: default; }
+input[type=text] { font: inherit; padding: 6px 8px; max-width: 100%; }
+.verdict { font-weight: 700; min-height: 1.6em; }
+.verdict.ok, .log .ok { color: #1b7f3a; }
+.verdict.ng, .log .ng { color: #c62828; }
+@media (prefers-color-scheme: dark) {
+  .verdict.ok, .log .ok { color: #5cc27e; }
+  .verdict.ng, .log .ng { color: #ff7a72; }
+}
+.log { font-size: 14px; padding-left: 1.2em; }
+.log li { margin: 2px 0; word-break: break-all; }
 .en { color: var(--muted); font-size: 14px; }

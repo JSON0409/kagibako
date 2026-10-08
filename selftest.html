@@ -6,11 +6,13 @@
     ページが読み込んでよい相手を絞る（CSP）。この動作テストのページは、自分のファイルしか読まない。
     ★スクリプトは必ず別ファイルに置く（この HTML の中に書くと CSP で止まる。わざとそうしている）。
   -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>かぎばこ 動作テスト</title>
   <script src="guard.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="stylesheet" href="selftest.css">
 </head>
 <body>

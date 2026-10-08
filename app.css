@@ -1,0 +1,152 @@
+/* かぎばこ — パソコン版の見た目（仕様書 §7.2）。色はアイコンの枠の青紫と、鍵の黄色から */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f5fb;
+  --panel: #ffffff;
+  --fg: #1d1b26;
+  --muted: #6c6880;
+  --line: #e2dff0;
+  --accent: #3a2bd0;
+  --accent-fg: #ffffff;
+  --accent-soft: #ece9ff;
+  --key: #f5b400;
+  --warn-bg: #fff3d6;
+  --warn-fg: #7a4a00;
+  --bad: #c62828;
+  --good: #1b7f3a;
+  --sel: #e7e3ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14131b;
+    --panel: #1d1c27;
+    --fg: #ecebf5;
+    --muted: #a19db5;
+    --line: #34313f;
+    --accent: #8f80ff;
+    --accent-fg: #14131b;
+    --accent-soft: #2b2650;
+    --warn-bg: #3d2f12;
+    --warn-fg: #ffd58a;
+    --bad: #ff7a72;
+    --good: #5cc27e;
+    --sel: #2f2a55;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+/* 上の「試しの金庫」の帯があっても、一覧の画面がちょうど画面に収まるように（帯の分だけ縮める） */
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+.testbanner { flex: none; }
+/* 読み上げ用（見た目には出さない） */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+button.link { background: none; border: 0; padding: 2px 4px; color: var(--accent); text-decoration: underline; font-size: 13px; }
+a { color: var(--accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button {
+  border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+  background: var(--accent-soft); color: var(--fg);
+}
+button.primary { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+button.ghost { background: transparent; border: 1px solid var(--line); }
+button.small { padding: 5px 12px; font-size: 14px; }
+button:disabled { opacity: .55; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+input[type=text], input[type=password], input[type=search], select, textarea {
+  width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+}
+textarea { resize: vertical; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.pre { white-space: pre-wrap; }
+
+.testbanner {
+  background: #b45309; color: #fff; text-align: center; padding: 6px 12px; font-size: 14px; font-weight: 600;
+}
+
+/* ---- W-1 開く ---- */
+.unlock { flex: 1; overflow-y: auto; width: 100%; max-width: 460px; margin: 0 auto; padding: 48px 16px 64px; text-align: center; }
+.unlock .links { margin: 8px 0 0; }
+.unlock .logo { display: block; margin: 0 auto 8px; }
+.unlock h1 { margin: 0 0 24px; font-size: 26px; }
+.unlockform { text-align: left; display: grid; gap: 8px; }
+.unlockform .primary { margin-top: 8px; padding: 11px; font-size: 16px; }
+.pwrow { display: flex; gap: 8px; }
+.pwrow input { flex: 1; min-width: 0; }
+.status { min-height: 1.6em; margin: 16px 0 0; font-weight: 600; white-space: pre-wrap; text-align: left; }
+.status.bad { color: var(--bad); }
+.hint { color: var(--muted); font-size: 13px; }
+.about { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); text-align: left; color: var(--muted); font-size: 13px; }
+
+/* ---- W-2 一覧と詳細 ---- */
+.main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.topbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.topbar .appname { font-weight: 700; font-size: 17px; }
+.topbar .appname::before { content: "🔑 "; }
+.spacer { flex: 1; }
+.band { display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
+.band.warn { background: var(--warn-bg); color: var(--warn-fg); }
+.panes { flex: 1; display: grid; grid-template-columns: minmax(300px, 380px) 1fr; min-height: 0; }
+.left { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-right: 1px solid var(--line); min-height: 0; }
+.syncrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.syncbar { background: transparent; padding: 2px 0; font-size: 13px; color: var(--muted); text-align: left; }
+.syncbar.warn { color: var(--warn-fg); font-weight: 600; }
+.list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.list li { display: flex; align-items: center; gap: 4px; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.list li:hover { background: var(--accent-soft); }
+.list li.sel { background: var(--sel); }
+.list .names { flex: 1; min-width: 0; }
+.list .title, .list .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .title { font-weight: 600; }
+.list .sub { color: var(--muted); font-size: 13px; }
+.list button { background: var(--panel); color: var(--fg); padding: 4px 8px; font-size: 13px; border: 1px solid var(--line); white-space: nowrap; }
+.list button:disabled { opacity: .35; }
+.empty { padding: 8px; }
+.right { padding: 20px 28px; overflow-y: auto; }
+.right h2 { margin: 0 0 16px; font-size: 22px; overflow-wrap: anywhere; }
+.field { margin: 0 0 16px; }
+.field .label { color: var(--muted); font-size: 13px; }
+.field .row { display: flex; align-items: center; gap: 8px; }
+.field .value { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.field .value.plain { font-family: inherit; white-space: pre-wrap; }
+.right .actions { display: flex; gap: 8px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.right .danger { color: var(--bad); }
+.right .placeholder { color: var(--muted); margin-top: 40px; text-align: center; }
+.copybanner { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--accent-soft); }
+.copybanner span { flex: 1; }
+.note { padding: 6px 16px 10px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
+.note p { margin: 2px 0; }
+
+/* ---- ダイアログ ---- */
+.dlg {
+  border: 0; border-radius: 14px; padding: 22px 24px; width: min(480px, calc(100vw - 32px));
+  background: var(--panel); color: var(--fg); box-shadow: 0 12px 40px rgba(0,0,0,.25);
+}
+.dlg.wide { width: min(560px, calc(100vw - 32px)); }
+.dlg::backdrop { background: rgba(10, 8, 30, .45); }
+.dlg h2 { margin: 0 0 12px; font-size: 19px; }
+.dlg h3 { margin: 18px 0 6px; font-size: 15px; }
+.dlg label { display: block; margin: 12px 0 4px; font-size: 14px; color: var(--muted); }
+.dlg label.check { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--fg); }
+.genrow { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+.buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+.buttons.column { flex-direction: column; align-items: stretch; }
+.info { padding-left: 1.2em; margin: 4px 0; }
+
+/* ---- 狭い画面（スマホのブラウザなど）では1列に ---- */
+@media (max-width: 760px) {
+  .panes { grid-template-columns: 1fr; grid-template-rows: minmax(200px, 45vh) 1fr; }
+  .left { border-right: 0; border-bottom: 1px solid var(--line); }
+  .right { padding: 16px; }
+  .note .keys { display: none; }
+}

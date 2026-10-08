@@ -2,16 +2,18 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>かぎばこ プライバシーポリシー</title>
   <script src="guard.js"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="stylesheet" href="page.css">
 </head>
 <body>
   <main>
     <h1>かぎばこ プライバシーポリシー</h1>
-    <p class="sub">2026年10月1日</p>
+    <p class="sub">2026年10月8日</p>
 
     <p>かぎばこ（以下「このアプリ」）は、個人が自分のパスワードを管理するための道具です。
       Android アプリと、このウェブページの2つがあり、どちらも同じ扱いをします。</p>
@@ -30,7 +32,7 @@
       <li>暗号化したファイル（<code>kagibako-vault.json</code>）を、利用者ご自身の Google ドライブに置きます。中身は暗号化されたままで、Google にも作者にも読めません。</li>
       <li>Google ドライブへのアクセスには、権限 <code>https://www.googleapis.com/auth/drive.file</code> だけを使います。
         これは「このアプリが作った、または利用者が選んだファイル」だけを扱える権限で、ドライブにあるほかのファイルを見ることはできません。</li>
-      <li>Google から受け取る情報は、このファイルを読み書きするためのアクセストークンと、ファイルの番号・更新の記録（版の番号・日時）だけです。</li>
+      <li>Google から受け取る情報は、このファイルを読み書きするためのアクセストークンと、ファイルの番号・名前・大きさ・作成と更新の記録（版の番号・日時）・ごみ箱に入っているかどうか、だけです。</li>
       <li>Google API から受け取った情報の使用と、ほかのアプリへの転送は、
         <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API サービスのユーザーデータに関するポリシー</a>（限定使用の要件を含む）に従います。
         受け取った情報を、ほかの目的に使ったり、人に渡したり、売ったりすることはありません。</li>
@@ -40,8 +42,8 @@
 
     <h2>4. 端末に残るもの</h2>
     <ul>
-      <li>ウェブページ: ブラウザの保存領域（localStorage）に、ファイルの番号・端末を見分けるための番号・暗号の計算に使う公開してよい値（salt と回数）だけを残します。暗号化した中身も平文も残しません。ページを閉じると、復号した内容はすべて消えます。Cookie は使いません。</li>
-      <li>Android アプリ: 電波の届かない場所でも見られるよう、暗号化したままのファイルを端末の中のアプリ専用の場所に残します。端末のバックアップや機種変更のコピーの対象からは外しています。</li>
+      <li>ウェブページ: ブラウザの保存領域（localStorage）に、ファイルの番号・端末を見分けるための番号・暗号の計算に使う公開してよい値（salt と回数）・このページの設定（自動ロックの時間など）だけを残します。暗号化した中身も平文も残しません。ページを閉じると、復号した内容はすべて消えます。Cookie は使いません。</li>
+      <li>Android アプリ: 電波の届かない場所でも見られるよう、暗号化したままのファイルと、秘密でない値（ファイルの番号・端末を見分けるための番号・設定）を、端末の中のアプリ専用の場所に残します。端末のバックアップや機種変更のコピーの対象からは外しています。</li>
     </ul>
 
     <h2>5. 連携をやめるとき</h2>
