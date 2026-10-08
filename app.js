@@ -14,6 +14,7 @@ import { itemFields, trimItemSpace, isItemBlank } from './vault-data.js';
 import { normalizeForSearch, matchesSearch, itemPassword } from './vault-tools.js';
 import { HttpDriveRemote, DriveUnauthorized } from './drive.js';
 import { WebVault, UnusualIterations } from './session.js';
+import { buildXlsx, exportFileName } from './export-xlsx.js';
 
 const $ = id => document.getElementById(id);
 
@@ -1046,11 +1047,13 @@ function lockNow(reason = '') {
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   closingEdit = false;
   clearEditForm();
-  // ★画面の上の平文も消す（隠れた所に残っているものも）
+  // ★画面の上の平文も消す（隠れた所に残っているものも）。書き出しのファイルの URL も手放す
   $('list').replaceChildren();
   $('detail').replaceChildren();
   $('search').value = '';
-  for (const id of ['listEmpty', 'msgText', 'confirmTitle', 'confirmText', 'conflictTitle', 'copyText', 'tokenLeft', 'syncBar', 'live', 'authText']) $(id).textContent = '';
+  $('exportPw').value = '';
+  releaseExportUrl();
+  for (const id of ['listEmpty', 'msgText', 'confirmTitle', 'confirmText', 'conflictTitle', 'copyText', 'tokenLeft', 'syncBar', 'live', 'authText', 'exportStatus']) $(id).textContent = '';
   for (const id of ['conflictText', 'sInfo', 'multiList']) $(id).replaceChildren();
   selectedId = null;
   revealId = null;
@@ -1142,6 +1145,90 @@ $('sForgetFile').addEventListener('click', () => {
   setUnlockStatus('鍵をかけました。マスターパスワードを入れて「ひらく」を押すと、Google ドライブから金庫を探し直します（同じ名前が2つあれば、選ぶ画面が出ます）。');
 });
 $('settingsClose').addEventListener('click', () => $('settingsDlg').close());
+
+// ------------------------------------------------------------------
+// 一覧を Excel に書き出す（印刷用・縦の A4。改訂 R-25）
+// ★パスワードが暗号化されずに入るファイルを作るので、書き出す前にマスターパスワードをもう一度入れてもらう
+//   （開いたまま席を離れた間に、ほかの人が一度に全部を持ち出せないように）。
+// ★ファイルはこのページの中だけで作る（export-xlsx.js。通信しない）。ダウンロードのフォルダに入る。
+// ------------------------------------------------------------------
+let exporting = false;
+let exportUrl = null;   // ダウンロードに渡した blob: の URL（鍵をかけたら、すぐ手放す）
+
+function setExportStatus(text, bad = false) {
+  $('exportStatus').textContent = text;
+  $('exportStatus').classList.toggle('bad', bad);
+}
+function releaseExportUrl() {
+  if (exportUrl) { URL.revokeObjectURL(exportUrl); exportUrl = null; }
+}
+/** すべての項目を、一覧と同じ順（サイト名の読みの順）で */
+function sortedItems() {
+  return vault.data.liveItems
+    .map(it => [normalizeForSearch(it.title), it])
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(x => x[1]);
+}
+
+$('sExport').addEventListener('click', () => {
+  if (!vault.isOpen) return;
+  $('settingsDlg').close();
+  if (vault.data.liveItems.length === 0) { showMessage('まだ何も入っていないので、書き出すものがありません。'); return; }
+  $('exportPw').value = '';
+  setExportStatus('');
+  $('exportGo').disabled = $('exportCancel').disabled = false;
+  $('exportDlg').showModal();
+  $('exportPw').focus();
+});
+$('exportCancel').addEventListener('click', () => { $('exportPw').value = ''; $('exportDlg').close(); });
+$('exportDlg').addEventListener('close', () => { $('exportPw').value = ''; });
+
+$('exportForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (exporting) return;
+  const pw = $('exportPw').value;
+  $('exportPw').value = '';
+  if (!vault.isOpen) { $('exportDlg').close(); return; }
+  if (!pw) { setExportStatus('マスターパスワードを入れてください。', true); $('exportPw').focus(); return; }
+  // 古い session.js が残っている（キャッシュ）ときは、読み直してもらう
+  if (typeof vault.checkPassword !== 'function') { setExportStatus('ページを読み直してください（Ctrl キーを押しながら F5）。', true); return; }
+  exporting = true;
+  $('exportGo').disabled = $('exportCancel').disabled = true;
+  setExportStatus('マスターパスワードを確かめています…');
+  try {
+    const okPw = await vault.checkPassword(pw);
+    if (!vault.isOpen || !$('exportDlg').open) return;   // 確かめている間に鍵がかかった
+    if (!okPw) {
+      setExportStatus('マスターパスワードが違うようです。大文字・小文字と、全角／半角をご確認ください。', true);
+      return;
+    }
+    const now = new Date();
+    const rows = sortedItems().map(it => ({ title: it.title, memo: it.memo, url: it.url, loginId: it.loginId, password: it.password }));
+    const bytes = buildXlsx(rows, { now, test: IS_TEST });
+    const name = exportFileName(now, IS_TEST);
+    releaseExportUrl();
+    exportUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    bytes.fill(0);   // Blob は写しを持つので、手元の分は消しておく
+    const a = el('a');
+    a.href = exportUrl;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    const url = exportUrl;
+    setTimeout(() => { if (exportUrl === url) releaseExportUrl(); }, 60000);
+    $('exportDlg').close();
+    showMessage(`「${name}」を書き出しました（${rows.length} 件。ダウンロードのフォルダに入ります）。\n` +
+      'Excel で開いて、そのまま印刷できます（縦の A4）。\n' +
+      '印刷が終わったら、ファイルを消して、ごみ箱も空にしてください。');
+  } catch (err) {
+    if ($('exportDlg').open) setExportStatus('書き出せませんでした。もう一度お試しください。', true);
+  } finally {
+    exporting = false;
+    $('exportGo').disabled = $('exportCancel').disabled = false;
+    if ($('exportDlg').open) $('exportPw').focus();
+  }
+});
 
 // ------------------------------------------------------------------
 // お知らせ・確かめ

@@ -300,6 +300,28 @@ export class WebVault {
     }));
   }
 
+  /**
+   * いま開いている金庫のマスターパスワードかを確かめる（一覧の書き出しの前。改訂 R-25）。
+   * Drive には行かない。手元の base（Drive から受け取った暗号文）を、入れられたパスワードで作った鍵で開けるかで見る。
+   * 合っていれば true、違えば false。作った鍵はすぐ消す（いまの鍵は使わないし、取り替えない）
+   */
+  async checkPassword(password) {
+    const text = this.#baseText;
+    if (!this.isOpen || !text) return false;
+    let key = null;
+    try {
+      const outer = parseOuter(text);
+      key = await deriveVaultKey(password, outer.kdf.salt, outer.kdf.iterations);
+      await decryptVault(key, text);
+      return true;
+    } catch (e) {
+      if (e instanceof VaultError && (e.code === 'WRONG_PASSWORD' || e.code === 'BAD_CHAR')) return false;
+      throw e;
+    } finally {
+      if (key) key.destroy();
+    }
+  }
+
   /** ロックする。鍵を消し、復号した中身も手放す（通信の途中のものも、このあと手元を書き換えない） */
   lock() {
     this.#gen++;

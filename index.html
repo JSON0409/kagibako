@@ -16,9 +16,9 @@
   <script src="guard.js"></script>
   <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-  <link rel="stylesheet" href="app.css?v=20261003c">
+  <link rel="stylesheet" href="app.css?v=20261008a">
   <script src="https://accounts.google.com/gsi/client" async></script>
-  <script type="module" src="app.js?v=20261003c"></script>
+  <script type="module" src="app.js?v=20261008a"></script>
 </head>
 <body>
   <div id="testBanner" class="testbanner" hidden></div>
@@ -157,6 +157,27 @@
     <div class="buttons"><button type="button" id="multiCancel" class="ghost">やめる</button></div>
   </dialog>
 
+  <!-- 一覧の書き出し（印刷用。改訂 R-25）。書き出す前に、マスターパスワードをもう一度入れてもらう -->
+  <dialog id="exportDlg" class="dlg" aria-labelledby="exportTitle">
+    <form id="exportForm" method="dialog" autocomplete="off">
+      <h2 id="exportTitle">一覧を Excel に書き出す（印刷用）</h2>
+      <p>書き出すファイルには、すべての ID とパスワードが、暗号化されずにそのまま入ります。</p>
+      <ul class="info">
+        <li>印刷が終わったら、ファイルを消して、ごみ箱も空にしてください。</li>
+        <li>印刷した紙は、通帳や印鑑と同じように、人に見られない場所にしまってください。</li>
+        <li>メールで送ったり、Google ドライブなどに置いたりしないでください。</li>
+      </ul>
+      <label for="exportPw">確かめのため、マスターパスワードをもう一度入れてください</label>
+      <!-- ★one-time-code: ブラウザのパスワード帳に拾わせない（改訂 R-22） -->
+      <input id="exportPw" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off">
+      <p id="exportStatus" class="status" role="status" aria-live="polite"></p>
+      <div class="buttons">
+        <button type="button" id="exportCancel" class="ghost">やめる</button>
+        <button type="submit" id="exportGo" class="primary">書き出す</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="settingsDlg" class="dlg" aria-labelledby="settingsTitle">
     <h2 id="settingsTitle">設定</h2>
     <label for="sLock">自動ロック（操作しないで、この時間がたったら鍵をかける）</label>
@@ -174,6 +195,9 @@
       <option value="120">2分</option>
     </select>
     <p class="muted small">※ Windows の「クリップボードの履歴」（Win+V）には、消したあとも残ることがあります。気になるときは、Windows の設定でクリップボードの履歴をオフにしてください。</p>
+    <h3>印刷用の一覧</h3>
+    <p class="muted small">サイト名・説明（メモ）・アドレス（URL）・ID・パスワードを、Excel のファイル（縦の A4）に書き出します。パスワードが暗号化されずに入るので、扱いに気をつけてください。</p>
+    <p><button type="button" id="sExport" class="ghost">一覧を Excel に書き出す（印刷用）</button></p>
     <h3>金庫の情報</h3>
     <ul id="sInfo" class="info"></ul>
     <p><button type="button" id="sForgetFile" class="link">鍵をかけて、金庫のファイルを選び直す（同じ名前が2つあるとき）</button></p>
