@@ -10,15 +10,19 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self'; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- ★iPhone の Safari に、パスワードやメモの数字を電話番号・住所・日付のリンクに変えさせない（押すと電話がかかる。改訂 R-26） -->
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
   <meta name="robots" content="noindex">
   <meta name="referrer" content="no-referrer">
   <title>かぎばこ</title>
   <script src="guard.js"></script>
   <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-  <link rel="stylesheet" href="app.css?v=20261008a">
+  <!-- iPhone のホーム画面に置いたときのアイコン（透明な所なし。iPhone は透明な所を黒く塗るため。作り方は tools/icon/README.md） -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css?v=20261112a">
   <script src="https://accounts.google.com/gsi/client" async></script>
-  <script type="module" src="app.js?v=20261008a"></script>
+  <script type="module" src="app.js?v=20261112a"></script>
 </head>
 <body>
   <div id="testBanner" class="testbanner" hidden></div>
@@ -29,6 +33,9 @@
   <section id="unlock" class="unlock">
     <img src="icon-192.png" alt="" class="logo" width="88" height="88">
     <h1>かぎばこ</h1>
+    <!-- iPhone のホーム画面に「Webアプリ」として置いて開いたとき（改訂 R-26。この形だと Google の画面がうまく戻らないことがある） -->
+    <p id="standaloneNote" class="notice" hidden>ホーム画面の「Webアプリ」として開いています。iPhone ではこの形だと、Google につなぐ画面がうまく戻らないことがあります。
+      つながらないときは、Safari でこのページを開いてください（ホーム画面に置き直すときは「Webアプリとして開く」をオフに）。<a href="iphone.html">くわしく</a></p>
     <!--
       ★autocomplete="one-time-code": ブラウザの「パスワードを保存しますか？」にマスターパスワードを拾わせない（改訂 R-22）。
         type=password は残す（日本語入力が止まる・伏せ字・欄からコピーできない、という守りのため）
@@ -36,25 +43,73 @@
     <form id="unlockForm" class="unlockform" autocomplete="off">
       <label for="pw">マスターパスワード</label>
       <div class="pwrow">
-        <input id="pw" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off">
+        <!-- autocorrect="off": iPhone で「表示」にしている間に、打った文字を勝手に直させない（改訂 R-26） -->
+        <input id="pw" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off" autocorrect="off">
         <button type="button" id="pwShow" class="ghost">表示</button>
       </div>
       <button id="openBtn" type="submit" class="primary">ひらく</button>
     </form>
     <p id="unlockStatus" class="status" role="status" aria-live="polite"></p>
-    <p class="hint">はじめて使うときは、Google の画面が出ます。いつものアカウント（スマホのかぎばこと同じもの）を選んで「続行」を押してください。</p>
-    <p class="hint">ブラウザに「パスワードを保存しますか？」と聞かれたら、「使用しない」を押してください。保存すると、Google アカウントだけで金庫が開けるようになってしまいます。</p>
+    <!-- 改訂 R-26: 金庫がまだ無い人（iPhone だけの人など）は、ここから作る -->
+    <p class="firstrow"><button type="button" id="setupBtn" class="ghost">はじめて使うとき（新しく金庫を作る）</button></p>
+    <p class="hint">「ひらく」を押すと、Google の画面が出ることがあります。いつも使っている Google アカウント（ほかの端末でもかぎばこを使っているなら、それと同じもの）を選んで「続行」を押してください。</p>
+    <p class="hint">ブラウザに「パスワードを保存しますか？」と聞かれたら、「使用しない」「今はしない」を押してください。保存すると、Google アカウントだけで金庫が開けるようになってしまいます。</p>
     <p class="links">
       <button type="button" id="chooseAccount" class="link">Google アカウントを選び直す</button>
       <button type="button" id="forgetFile" class="link" hidden>金庫のファイルを探し直す</button>
     </p>
     <div class="about">
       <p>かぎばこは、ID とパスワードをマスターパスワードで暗号化して、あなたの Google ドライブにしまっておく道具です。
-        Android アプリと、このパソコン用のページの両方から、同じファイルを読み書きします。
+        Android アプリと、このページ（パソコン・iPhone）のどちらからでも、同じファイルを読み書きします。
         暗号化と復号はすべてこの端末の中で行い、マスターパスワードやパスワードが、作者を含むほかの誰かに送られることはありません。
-        このページは、金庫の中身をパソコンに残しません（タブを閉じると、開いた中身は消えます）。</p>
-      <p><a href="privacy.html">プライバシーポリシー</a> ・ <a href="terms.html">利用規約</a> ・ <a href="selftest.html">動作テスト</a> ・ <a href="https://github.com/JSON0409">連絡先（GitHub）</a></p>
+        このページは、金庫の中身をこの端末に残しません（タブを閉じると、開いた中身は消えます）。</p>
+      <p><a href="iphone.html">iPhone で使うには</a> ・ <a href="privacy.html">プライバシーポリシー</a> ・ <a href="terms.html">利用規約</a> ・ <a href="selftest.html">動作テスト</a> ・ <a href="https://github.com/JSON0409">連絡先（GitHub）</a></p>
     </div>
+  </section>
+
+  <!--
+    W-0 金庫を作る（はじめて使うとき。改訂 R-26。Android の A-0 と同じ流れ）
+    ① マスターパスワードを決める → ② 紙に書き写す → ③ 紙を見ながらもう一度入れる → 作る（作る直前にもう一度探し、あれば作らない）
+    ★入力欄は autocomplete="one-time-code"（ブラウザや iPhone のパスワード帳に、マスターパスワードを拾わせない）
+  -->
+  <section id="setup" class="unlock setup" hidden>
+    <img src="icon-192.png" alt="" class="logo" width="64" height="64">
+    <h1>新しい金庫を作ります</h1>
+    <div id="setupStep1" class="setupstep">
+      <p class="notice">ほかの端末（スマホのかぎばこ など）で、もう金庫を使っているなら、ここでは作りません。「やめる」を押して、開く画面の「Google アカウントを選び直す」から、その金庫を開いてください。</p>
+      <h2>① マスターパスワードを決めます</h2>
+      <p>金庫を開ける、ただ1つの合言葉です。下の候補から選ぶのがおすすめです（29文字。紙に書き写しやすい形です）。</p>
+      <ul id="setupCandidates" class="candidates" aria-label="マスターパスワードの候補"></ul>
+      <p><button type="button" id="setupMore" class="link">ほかの候補を出す</button></p>
+      <p class="hint">自分で決めるときは、12文字以上にしてください（20文字以上がおすすめ）。</p>
+      <label for="setupPw">マスターパスワード</label>
+      <div class="pwrow">
+        <input id="setupPw" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off" autocorrect="off">
+        <button type="button" id="setupPwShow" class="ghost">表示</button>
+      </div>
+      <p id="setupCheck" class="status" role="status" aria-live="polite"></p>
+      <div class="buttons">
+        <button type="button" id="setupCancel" class="ghost">やめる</button>
+        <button type="button" id="setupNext" class="primary">次へ</button>
+      </div>
+    </div>
+    <form id="setupStep2" class="setupstep" autocomplete="off" hidden>
+      <h2>② 紙に書き写します</h2>
+      <p class="warntext">マスターパスワードは、どこにも保存されません。忘れたら、誰にも（作った人にも）元に戻せません。</p>
+      <p>いまから紙に書き写して、人に見られない場所にしまってください。スマホの写真やメモ、Google ドライブには残さないでください。</p>
+      <p>書き写すマスターパスワード:</p>
+      <p id="setupShow" class="bigpw"></p>
+      <label class="check"><input id="setupWrote" type="checkbox"> 紙に書き写しました</label>
+      <h2>③ 確かめのため、紙を見ながらもう一度入れてください</h2>
+      <label for="setupConfirm">もう一度</label>
+      <input id="setupConfirm" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off" autocorrect="off">
+      <p class="hint">「金庫を作る」を押すと、Google のアカウントを選ぶ画面が出ます。金庫をしまう、自分のアカウントを選んでください。</p>
+      <p id="setupStatus" class="status" role="status" aria-live="polite"></p>
+      <div class="buttons">
+        <button type="button" id="setupBack" class="ghost">戻る</button>
+        <button type="submit" id="setupCreate" class="primary">金庫を作る</button>
+      </div>
+    </form>
   </section>
 
   <!-- W-2 一覧と詳細 -->
@@ -74,7 +129,7 @@
     <div id="skewBand" class="band warn" hidden></div>
     <div class="panes">
       <div class="left">
-        <input id="search" type="search" aria-label="さがす" placeholder="さがす（サイト名・ID・URL・メモ）" autocomplete="off" spellcheck="false">
+        <input id="search" type="search" aria-label="さがす" placeholder="さがす（サイト名・ID・URL・メモ）" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
         <div class="syncrow">
           <button id="syncBar" type="button" class="syncbar"></button>
           <span id="tokenLeft" class="muted small"></span>
@@ -89,7 +144,7 @@
       <button id="copyClear" type="button" class="ghost small">いま消す</button>
     </div>
     <footer class="note">
-      <p>ブラウザの決まりで、ほかの画面に移ると、コピーしたパスワードを自動で消せないことがあります。</p>
+      <p>ブラウザの決まりで、ほかの画面に移ると、コピーしたパスワードを自動で消せないことがあります（そのときは、このページに戻って画面のどこかを押すと消します）。</p>
       <p class="keys">キー操作: 文字を打つ → さがす ／ ↑↓ 選ぶ ／ Enter パスワードをコピー ／ Shift+Enter ID をコピー ／ Alt+V パスワードの表示 ／ Alt+N 追加 ／ Esc 検索を消す → もう一度でロック</p>
     </footer>
   </section>
@@ -97,15 +152,17 @@
   <!-- W-4 編集・新規 -->
   <dialog id="editDlg" class="dlg wide" aria-labelledby="editTitle">
     <form id="editForm" method="dialog" autocomplete="off">
-      <h2 id="editTitle">新しく追加</h2>
+      <!-- tabindex と autofocus: 小窓を開いたとき、最初の入力欄ではなく見出しに入る（iPhone の「編集」でキーボードを勝手に出さない。
+           「新しく追加」とパソコンでは、app.js がサイト名の欄に入れる） -->
+      <h2 id="editTitle" tabindex="-1" autofocus>新しく追加</h2>
       <label for="fTitle">サイト名（必ず）</label>
       <input id="fTitle" type="text" autocomplete="off" spellcheck="false">
       <label for="fLogin">ID（メールアドレスなど）</label>
-      <input id="fLogin" type="text" autocomplete="off" spellcheck="false" autocapitalize="off">
+      <input id="fLogin" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off">
       <label for="fPass">パスワード</label>
       <div class="pwrow">
         <!-- ★one-time-code: 各項目のパスワードを、ブラウザのパスワード帳に写させない（改訂 R-22） -->
-        <input id="fPass" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off">
+        <input id="fPass" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off" autocorrect="off">
         <button type="button" id="fPassShow" class="ghost">表示</button>
       </div>
       <div class="genrow">
@@ -113,7 +170,7 @@
         <label class="check"><input id="fNoSym" type="checkbox"> 記号なし</label>
       </div>
       <label for="fUrl">URL（なくてもよい）</label>
-      <input id="fUrl" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" inputmode="url">
+      <input id="fUrl" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" inputmode="url">
       <label for="fMemo">メモ（なくてもよい）</label>
       <!-- ★spellcheck="false": ブラウザのスペルチェック（ネット経由のものもある）にメモの中身を送らない -->
       <textarea id="fMemo" rows="4" autocomplete="off" spellcheck="false"></textarea>
@@ -169,7 +226,7 @@
       </ul>
       <label for="exportPw">確かめのため、マスターパスワードをもう一度入れてください</label>
       <!-- ★one-time-code: ブラウザのパスワード帳に拾わせない（改訂 R-22） -->
-      <input id="exportPw" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off">
+      <input id="exportPw" type="password" autocomplete="one-time-code" spellcheck="false" autocapitalize="off" autocorrect="off">
       <p id="exportStatus" class="status" role="status" aria-live="polite"></p>
       <div class="buttons">
         <button type="button" id="exportCancel" class="ghost">やめる</button>
@@ -194,10 +251,13 @@
       <option value="60">60秒</option>
       <option value="120">2分</option>
     </select>
-    <p class="muted small">※ Windows の「クリップボードの履歴」（Win+V）には、消したあとも残ることがあります。気になるときは、Windows の設定でクリップボードの履歴をオフにしてください。</p>
-    <h3>印刷用の一覧</h3>
-    <p class="muted small">サイト名・説明（メモ）・アドレス（URL）・ID・パスワードを、Excel のファイル（縦の A4）に書き出します。パスワードが暗号化されずに入るので、扱いに気をつけてください。</p>
-    <p><button type="button" id="sExport" class="ghost">一覧を Excel に書き出す（印刷用）</button></p>
+    <p id="clipNoteWin" class="muted small">※ Windows の「クリップボードの履歴」（Win+V）には、消したあとも残ることがあります。気になるときは、Windows の設定でクリップボードの履歴をオフにしてください。</p>
+    <!-- ★iPhone・iPad では出さない（Safari のダウンロード先は、ふつう iCloud Drive。パスワードの入ったファイルが黙ってクラウドに上がるため。改訂 R-26） -->
+    <div id="exportSection">
+      <h3>印刷用の一覧</h3>
+      <p class="muted small">サイト名・説明（メモ）・アドレス（URL）・ID・パスワードを、Excel のファイル（縦の A4）に書き出します。パスワードが暗号化されずに入るので、扱いに気をつけてください。</p>
+      <p><button type="button" id="sExport" class="ghost">一覧を Excel に書き出す（印刷用）</button></p>
+    </div>
     <h3>金庫の情報</h3>
     <ul id="sInfo" class="info"></ul>
     <p><button type="button" id="sForgetFile" class="link">鍵をかけて、金庫のファイルを選び直す（同じ名前が2つあるとき）</button></p>

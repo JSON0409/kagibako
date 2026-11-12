@@ -74,10 +74,32 @@ export class HttpDriveRemote {
     }, 'json', false));
   }
 
-  async listByName(name) {
+  /**
+   * 新しいファイルを作る（ウェブで金庫を作るとき。改訂 R-26。Android の HttpDriveRemote.create と同じ形）。
+   * ★mimeType は application/octet-stream（Google ドキュメント形式に変換されないように。§1.1 #4）
+   * ★作るのも送り直さない（Google 側では作れていて返事だけ失敗したとき、金庫が2つになる）
+   */
+  async createFile(name, content) {
+    const r = new Uint32Array(2); crypto.getRandomValues(r);
+    const boundary = 'kagibako' + r[0].toString(16) + r[1].toString(16);
+    const meta = JSON.stringify({ name: String(name), mimeType: 'application/octet-stream' });
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+      `--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n${content}\r\n--${boundary}--\r\n`;
+    return parseMeta(await this.#send(`${UPLOAD}/files?uploadType=multipart&fields=${FIELDS}`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body: new TextEncoder().encode(body),
+    }, 'json', false));
+  }
+
+  /**
+   * 名前で探す。ふだんはごみ箱の中を除く。includeTrashed = true なら、ごみ箱の中も探す
+   * （金庫を作る前に、ごみ箱に入った金庫が無いか確かめるため。改訂 R-26）
+   */
+  async listByName(name, includeTrashed = false) {
     // 名前に ' や \ が入ると q の書き方が壊れるので、逃がしてから入れる
     const escaped = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const q = encodeURIComponent(`name='${escaped}' and trashed=false`);
+    const q = encodeURIComponent(includeTrashed ? `name='${escaped}'` : `name='${escaped}' and trashed=false`);
     const r = await this.#send(`${API}/files?q=${q}&spaces=drive&pageSize=10&fields=files(${FIELDS})`, { method: 'GET' }, 'json');
     return Array.isArray(r.files) ? r.files.map(parseMeta) : [];
   }

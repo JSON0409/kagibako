@@ -46,6 +46,23 @@ function randomBelow(n) {
   }
 }
 
+// マスターパスワードの候補（仕様書 §7.1 A-0。ウェブで金庫を作るとき。改訂 R-26）
+const CONSONANTS = 'bdfghjklmnprstvwz';   // 17
+const VOWELS = 'aeiou';                   // 5
+
+/**
+ * マスターパスワードの候補。「子音・母音・子音・母音・子音」の5文字を5つ、ハイフンでつなぐ（29文字）。
+ * 例: kumap-tiren-jolaz-webuk-dinor。約84ビットの強さで、紙に書き写しやすい（Android の PasswordGen.masterCandidate と同じ形）。
+ */
+export function masterCandidate() {
+  const group = () => {
+    let s = '';
+    for (const set of [CONSONANTS, VOWELS, CONSONANTS, VOWELS, CONSONANTS]) s += set[randomBelow(set.length)];
+    return s;
+  };
+  return [group(), group(), group(), group(), group()].join('-');
+}
+
 /** 項目のパスワード。小文字・大文字・数字（記号を含むなら記号も）を、それぞれ1文字以上必ず含める */
 export function itemPassword(length = 20, symbols = true, excludeSimilar = true) {
   if (!(length >= 8 && length <= 64)) throw new RangeError('length');

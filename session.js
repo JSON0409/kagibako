@@ -15,7 +15,7 @@
 
 // ★import の後ろに ?v= を付けない。付ける・付けないが混ざると、同じファイルが別物として2回読まれ、
 //   VaultError の見分け（instanceof）が効かなくなる。キャッシュ対策は index.html の app.js?v= だけで行う。
-import { VaultError, ITERATIONS, deriveVaultKey, decryptVault, encryptVault, parseOuter } from './vault-crypto.js';
+import { VaultError, ITERATIONS, deriveVaultKey, decryptVault, encryptVault, parseOuter, checkNewMasterPassword, newSaltB64 } from './vault-crypto.js';
 import { VaultData, formatTime } from './vault-data.js';
 import { DriveNotFound, DriveUnauthorized, DriveOffline, DriveHttpError, DriveBusy } from './drive.js';
 
@@ -27,6 +27,7 @@ export class UnusualIterations extends Error {
 // 結果の種類（Android の SyncOutcome と同じ名前）:
 //   Opened{restored, draft} / UpToDate / Downloaded{reconsidered} / Uploaded / Conflict{meta, rolledBack} / NoVault / Trashed
 //   Multiple{files} / Offline / AuthNeeded / Throttled / DriveError{status, reason} / Busy / Refused{code} / Locked
+//   Created{saltB64, iterations, keptRemains} / AlreadyExists{meta} / TrashedExists{count}（金庫を作るとき。改訂 R-26）
 const out = (kind, extra = {}) => Object.freeze({ kind, ...extra });
 
 export class WebVault {
@@ -102,6 +103,65 @@ export class WebVault {
 
   /** 同じ名前の金庫が2つ以上あったとき、利用者が選んだ方を使う（自動では選ばない。§5.2 の 2-b） */
   chooseFile(id) { this.#store.setFileId(id); }
+
+  /**
+   * 新しい金庫を作って開く（はじめて使うとき。改訂 R-26。Android の VaultService.create と SyncEngine.createVault と同じ手順）。
+   * ★作る直前にもう一度名前で探し、もうあれば作らない（AlreadyExists。そのファイルの番号を覚えるので、続けて open で開ける）。
+   *   2つ以上なら Multiple。2台が同時に作って金庫が2つに分かれるのを、できるだけ防ぐ（§1.1 #24）
+   * ★ごみ箱の中も探し、ごみ箱にしか無ければ作らない（TrashedExists）。新しく作ると、ごみ箱の金庫に気づかないまま
+   *   30日で消えてしまうため。復元してもらってから開く
+   * ★作るのは送り直さない（drive.js の createFile。Google 側では作れていて返事だけ失敗したとき、金庫が2つになる）
+   * ★作っている途中でロックされたら、作れていても開いたままにはしない（Locked。次は開く画面から）
+   * 弱すぎる・使えない文字のパスワードは、画面で先に止める（ここでは VaultError BAD_CHAR / RangeError TOO_SHORT）。
+   */
+  create(password, { onStage = () => {} } = {}) {
+    return this.#enqueue(async () => {
+      if (this.isOpen) throw new Error('金庫を開いたまま、新しく作ろうとした');
+      const check = checkNewMasterPassword(password);
+      if (check === 'TOO_SHORT') throw new RangeError('TOO_SHORT');
+      if (check !== 'OK') throw new VaultError('BAD_CHAR');
+      const gen = this.#gen;
+      let key = null;
+      try {
+        onStage('check');
+        const all = await this.#remote.listByName(this.#fileName, true);   // ごみ箱の中も
+        const existing = all.filter(f => !f.trashed);
+        if (existing.length === 1) {
+          this.#store.setFileId(existing[0].id);
+          return out('AlreadyExists', { meta: existing[0] });
+        }
+        if (existing.length > 1) return out('Multiple', { files: existing });
+        if (all.length > 0) return out('TrashedExists', { count: all.length });
+        onStage('kdf');
+        key = await deriveVaultKey(password, newSaltB64(), ITERATIONS);
+        const now = this.#nowText();
+        const data = VaultData.empty(now, this.#deviceId).stampedForUpload(now, this.#deviceId, null);
+        const text = await encryptVault(key, data.toJson());
+        if (gen !== this.#gen) return out('Locked');   // 作る前にロックされた（まだ作っていない）
+        onStage('create');
+        const rm = await this.#remote.createFile(this.#fileName, text);
+        this.#store.setFileId(rm.id);   // ロックされていても、作ったファイルの番号は覚える（次に開くとき探さずに済む）
+        if (gen !== this.#gen) return out('Locked');
+        const written = Date.parse(rm.modifiedTime);
+        if (Number.isFinite(written)) this.#clockSkewMs = this.#now() - written;
+        if (this.#key) this.#key.destroy();
+        this.#key = key; key = null;
+        this.#fileId = rm.id;
+        this.#adopt(text, rm, data);
+        this.#local = data;
+        this.#dirty = false;
+        this.#pending = null;
+        // ロックの前にとっておいたもの（別の金庫の変更）は、新しい金庫には戻さない。とっておいたまま
+        return out('Created', { saltB64: this.#key.saltB64, iterations: this.#key.iterations, keptRemains: this.#kept.length > 0 });
+      } catch (e) {
+        const o = driveOutcome(e);
+        if (o) return o;
+        throw e;
+      } finally {
+        if (key) key.destroy();
+      }
+    });
+  }
 
   /**
    * Drive から取ってきて、マスターパスワードで開く。

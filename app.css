@@ -36,6 +36,8 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { height: 100%; }
+/* iPhone の Safari は、下のツールバーが出たり引っこんだりする。いま見えている高さにぴったり合わせる（改訂 R-26） */
+@supports (height: 100dvh) { body { height: 100dvh; } }
 /* 上の「試しの金庫」の帯があっても、一覧の画面がちょうど画面に収まるように（帯の分だけ縮める） */
 body {
   margin: 0;
@@ -87,6 +89,29 @@ textarea { resize: vertical; }
 .status.bad { color: var(--bad); }
 .hint { color: var(--muted); font-size: 13px; }
 .about { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); text-align: left; color: var(--muted); font-size: 13px; }
+.notice { text-align: left; background: var(--warn-bg); color: var(--warn-fg); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin: 0 0 16px; }
+.firstrow { margin: 12px 0 0; }
+.firstrow button { width: 100%; }
+
+/* ---- W-0 金庫を作る（改訂 R-26） ---- */
+.setup { padding-top: 32px; }
+.setup h1 { font-size: 22px; margin-bottom: 16px; }
+.setupstep { text-align: left; }
+.setupstep h2 { font-size: 17px; margin: 20px 0 8px; }
+.setupstep label { display: block; margin: 12px 0 4px; font-size: 14px; color: var(--muted); }
+.setupstep label.check { display: flex; align-items: center; gap: 8px; color: var(--fg); font-size: 15px; margin: 12px 0; }
+.setupstep label.check input { width: 22px; height: 22px; }
+.candidates { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; }
+.candidates li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.candidates .cand { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; }
+.bigpw {
+  font: 600 22px/1.5 ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .04em; overflow-wrap: anywhere; padding: 12px; border-radius: 8px;
+  background: var(--panel); border: 2px solid var(--accent); text-align: center;
+}
+.warntext { color: var(--bad); font-weight: 700; }
+/* マスターパスワードは選んでコピーさせない（クリップボードに残さない・紙に書く確かめを、貼り付けで飛ばさない） */
+.bigpw, .candidates .cand { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
 /* ---- W-2 一覧と詳細 ---- */
 .main { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -122,6 +147,8 @@ textarea { resize: vertical; }
 .right .actions { display: flex; gap: 8px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
 .right .danger { color: var(--bad); }
 .right .placeholder { color: var(--muted); margin-top: 40px; text-align: center; }
+/* 「← 一覧に戻る」は、一覧と詳細を切り替える細い画面だけで出す */
+.right .backbtn { display: none; }
 .copybanner { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--accent-soft); }
 .copybanner span { flex: 1; }
 .note { padding: 6px 16px 10px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
@@ -135,6 +162,7 @@ textarea { resize: vertical; }
 .dlg.wide { width: min(560px, calc(100vw - 32px)); }
 .dlg::backdrop { background: rgba(10, 8, 30, .45); }
 .dlg h2 { margin: 0 0 12px; font-size: 19px; }
+.dlg h2:focus { outline: none; }
 .dlg h3 { margin: 18px 0 6px; font-size: 15px; }
 .dlg label { display: block; margin: 12px 0 4px; font-size: 14px; color: var(--muted); }
 .dlg label.check { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--fg); }
@@ -143,10 +171,43 @@ textarea { resize: vertical; }
 .buttons.column { flex-direction: column; align-items: stretch; }
 .info { padding-left: 1.2em; margin: 4px 0; }
 
-/* ---- 狭い画面（スマホのブラウザなど）では1列に ---- */
+/* ---- 狭い画面（iPhone・スマホのブラウザなど）。改訂 R-26 ----
+   一覧と詳細を1画面ずつ切り替える（行を押すと詳細、「← 一覧に戻る」か、画面の左のはしから右へなぞると一覧）。
+   main に detail-open が付いている間だけ詳細を出す */
 @media (max-width: 760px) {
-  .panes { grid-template-columns: 1fr; grid-template-rows: minmax(200px, 45vh) 1fr; }
-  .left { border-right: 0; border-bottom: 1px solid var(--line); }
-  .right { padding: 16px; }
+  /* ★minmax(0, …) と min-width: 0 にする。ただの 1fr だと、長いサイト名やメールアドレス（折り返さない）に合わせて列が広がり、
+     行の右の「👤ID」「🔑PW」が画面の外に押し出される */
+  .panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .left, .right { min-width: 0; }
+  .left { border-right: 0; padding: 10px 12px; }
+  .main:not(.detail-open) .right { display: none; }
+  .main.detail-open .left { display: none; }
+  .right { padding: 8px 16px 24px; }
+  .right .backbtn { display: inline-block; margin: 0 0 8px -8px; padding: 8px; font-size: 15px; background: none; color: var(--accent); }
+  .right h2 { font-size: 20px; }
+  .field .row { flex-wrap: wrap; }
+  .field .row button { min-height: 40px; }
+  .right .actions button { min-height: 44px; flex: 1; }
+  .topbar { padding: 8px 10px; gap: 6px; }
+  .topbar .appname { font-size: 16px; }
+  .topbar button { min-height: 40px; }
+  .list li { padding: 10px 6px; gap: 6px; }
+  .list button { min-height: 40px; padding: 6px 10px; font-size: 14px; }
+  .syncbar { min-height: 32px; }
+  .copybanner button { min-height: 40px; }
+  .note { padding: 4px 12px 8px; }
   .note .keys { display: none; }
+  .dlg { padding: 18px 16px; }
+  .unlock { padding-top: 32px; }
+  /* マスターパスワードの候補は1行で見せ（紙に書き写しやすいように）、「これにする」はその下の右に */
+  .candidates li { flex-wrap: wrap; }
+  .candidates .cand { flex-basis: 100%; font-size: 15px; white-space: nowrap; overflow-x: auto; }
+  .candidates li button { margin-left: auto; min-height: 40px; }
+  .bigpw { font-size: 17px; letter-spacing: 0; padding: 12px 8px; }
 }
+/* 指で触る画面では、入力欄の文字を 16px 以上にする（iPhone は、それより小さい欄を押すと画面を勝手に拡大する） */
+@media (max-width: 760px), (pointer: coarse) {
+  input[type=text], input[type=password], input[type=search], select, textarea { font-size: 16px; }
+}
+/* 小窓は、画面より高くなったら中で動かせるように（iPhone でキーボードが出ているときなど） */
+.dlg { max-height: calc(100% - 24px); overflow-y: auto; }

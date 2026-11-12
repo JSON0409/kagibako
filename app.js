@@ -9,9 +9,13 @@
 // ★鍵をかけたら、画面の上の平文はすぐ消す。まだ保存できていない変更と編集中の下書きは、暗号化して記憶の中にだけとっておく。
 
 import { GOOGLE_CLIENT_ID, DRIVE_SCOPE } from './config.js';
-import { VaultError, deriveVaultKey } from './vault-crypto.js';
+import { VaultError, deriveVaultKey, checkNewMasterPassword } from './vault-crypto.js';
 import { itemFields, trimItemSpace, isItemBlank } from './vault-data.js';
 import { normalizeForSearch, matchesSearch, itemPassword } from './vault-tools.js';
+// ★あとから足した部品（masterCandidate）は「まとめて読む」形で使う。公開した直後は、ブラウザに古い vault-tools.js の控えが
+//   残っていることがあり（GitHub Pages は10分ほど控えを使わせる）、名前を指定して読むと、そこでページ全体が動かなくなるため。
+//   部品がそろっていなければ、金庫を作る前に「読み直してください」と出す（canCreate。改訂 R-26）
+import * as vaultTools from './vault-tools.js';
 import { HttpDriveRemote, DriveUnauthorized } from './drive.js';
 import { WebVault, UnusualIterations } from './session.js';
 import { buildXlsx, exportFileName } from './export-xlsx.js';
@@ -27,6 +31,17 @@ if (IS_TEST) {
   $('testBanner').textContent = `試しの金庫（${FILE_NAME}）を開きます。本物のパスワードは入れないでください。`;
   $('testBanner').hidden = false;
 }
+
+// ------------------------------------------------------------------
+// どんな端末で開いているか（案内の言い方と、iPhone の決まりへの合わせ方を変える。改訂 R-26）
+// ------------------------------------------------------------------
+// iPhone・iPad か（iPadOS 13 以降の Safari は Mac のふりをするので、触れる点の数でも見る）
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// 指で触る端末か（キーボードを勝手に出さない・Google の画面の出方の案内を変える）
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+// ホーム画面の「Webアプリ」として開いているか。iPhone ではこの形だと、Google につなぐ画面がうまく戻らないことがある
+const STANDALONE = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+if (IS_IOS && STANDALONE) $('standaloneNote').hidden = false;
 
 // ------------------------------------------------------------------
 // localStorage（秘密でないものだけ。使えないブラウザでも動くように、失敗は黙って無視する）
@@ -94,7 +109,7 @@ function requestToken() {
   if (tokenWait) return tokenWait.promise;
   let resolve, reject;
   const promise = new Promise((a, b) => { resolve = a; reject = b; });
-  tokenWait = { promise, resolve, reject };
+  tokenWait = { promise, resolve, reject, since: Date.now() };
   const select = selectAccountNext;
   selectAccountNext = false;
   if (select) tokenClient.requestAccessToken({ prompt: 'select_account' });
@@ -122,9 +137,18 @@ function getToken() {
 }
 
 function gisErrorText(e, button = 'ひらく') {
+  const text = gisErrorBase(e, button);
+  // iPhone のホーム画面の「Webアプリ」では、Google の画面が戻らないことがある（改訂 R-26）
+  return IS_IOS && STANDALONE
+    ? text + '\nうまくいかないときは、Safari でこのページ（json0409.github.io/kagibako）を開いてください。'
+    : text;
+}
+function gisErrorBase(e, button) {
   switch (e?.gisType) {
     case 'popup_failed_to_open':
-      return `ブラウザが Google の小窓をふさぎました。アドレス欄の右にある小さなアイコンを押して「許可」してから、もう一度「${button}」を押してください。`;
+      return IS_IOS
+        ? `iPhone が Google の画面をふさぎました。「設定」アプリの「Safari」（iOS 18 以降は「アプリ」→「Safari」）で「ポップアップブロック」をオフにしてから、もう一度「${button}」を押してください。`
+        : `ブラウザが Google の小窓をふさぎました。アドレス欄の右にある小さなアイコンを押して「許可」してから、もう一度「${button}」を押してください。`;
     case 'popup_closed':
       return `Google の画面が閉じられました。もう一度「${button}」を押してください。`;
     case 'access_denied':
@@ -189,7 +213,9 @@ function announce(text) { $('live').textContent = text; }
 // ------------------------------------------------------------------
 let unlocking = false;
 const STAGE = { download: '金庫を読んでいます…', kdf: '鍵をつくっています…（1/2）', decrypt: '金庫を開いています…（2/2）' };
-const WAIT_GOOGLE = 'Google につないでいます…\nGoogle の小さな窓が出ています。見当たらないときは、画面の下のタスクバーで Chrome の窓を探してください。';
+const WAIT_GOOGLE = TOUCH
+  ? 'Google につないでいます…\nGoogle の画面が開きます。アカウントを選んで「続行」を押すと、ここに戻ります。'
+  : 'Google につないでいます…\nGoogle の小さな窓が出ています。見当たらないときは、画面の下のタスクバーで Chrome の窓を探してください。';
 
 function setUnlockStatus(text, bad = false) {
   $('unlockStatus').textContent = text;
@@ -210,7 +236,7 @@ $('pwShow').addEventListener('click', () => {
 $('chooseAccount').addEventListener('click', () => {
   selectAccountNext = true;
   accessToken = null;       // いまのつながりは使わない
-  setUnlockStatus('次に「ひらく」を押すと、Google のアカウントを選ぶ画面が出ます。スマホのかぎばこと同じアカウントを選んでください。');
+  setUnlockStatus('次に「ひらく」を押すと、Google のアカウントを選ぶ画面が出ます。金庫を置いているアカウント（ほかの端末でもかぎばこを使っているなら、それと同じもの）を選んでください。');
   $('pw').focus();
 });
 
@@ -306,8 +332,10 @@ async function finishUnlock(pw, tokenP, preKeyP, allowUnusual) {
       return finishUnlock(pw, Promise.resolve(), Promise.resolve(null), allowUnusual);
     }
     case 'NoVault':
-      setUnlockStatus(`Google ドライブに金庫（${FILE_NAME}）が見つかりません。金庫はスマホのかぎばこで作ってください（このページでは作れません）。\n` +
-        'スマホと別の Google アカウントを選んだかもしれないときは、下の「Google アカウントを選び直す」を押してから「ひらく」を押してください。', true);
+      // 改訂 R-26: このページでも金庫を作れる。ただし、別のアカウントを選んだだけの人が、うっかり2つめの金庫を作らないように案内する
+      setUnlockStatus(`この Google アカウントの Google ドライブには、まだ金庫（${FILE_NAME}）がありません。\n` +
+        '・はじめて使うときは、下の「はじめて使うとき（新しく金庫を作る）」を押してください。\n' +
+        '・ほかの端末（スマホのかぎばこ など）で使っている金庫を開きたいときは、その下の「Google アカウントを選び直す」を押して、その端末と同じアカウントを選んでから「ひらく」を押してください。', true);
       return;
     case 'Trashed':
       setUnlockStatus(`Google ドライブで、金庫のファイル（${FILE_NAME}）がごみ箱に入っています。Google ドライブの「ごみ箱」から「復元」してから、もう一度「ひらく」を押してください。` +
@@ -350,19 +378,324 @@ function chooseFile(files) {
 }
 
 // ------------------------------------------------------------------
+// W-0 金庫を作る（はじめて使うとき。改訂 R-26。Android の A-0 と同じ流れ）
+// ★マスターパスワードは、作るまでの間だけ記憶の中に持つ。作り終えたら・やめたら・ページを離れたら、画面からも消す
+// ★「金庫を作る」で Google につなぐ。小窓（requestToken）は、押した処理の中で await より前に呼ぶ
+// ------------------------------------------------------------------
+let creating = false;
+let setupPw = '';          // ① で決めたマスターパスワード（② で見せて、作るときに使う）
+let setupHiddenAt = 0;     // 作る画面のまま、ほかのアプリに移った時刻
+const SETUP_STAGE = {
+  check: 'Google ドライブに、もう金庫が無いか確かめています…',
+  kdf: '鍵をつくっています…',
+  create: 'Google ドライブに金庫を作っています…',
+};
+
+function setSetupStatus(text, bad = false) {
+  $('setupStatus').textContent = text;
+  $('setupStatus').classList.toggle('bad', bad);
+}
+function setupStep(n) {
+  $('setupStep1').hidden = n !== 1;
+  $('setupStep2').hidden = n !== 2;
+  $('setup').scrollTop = 0;
+}
+function showSetup() {
+  if (!uiLocked || creating || unlocking) return;
+  if (!canCreate()) {
+    setUnlockStatus('ページが新しくなったばかりで、古い部品が残っています。ページを読み直してから、もう一度押してください' +
+      '（パソコンは Ctrl キーを押しながら F5、iPhone はアドレス欄の「↻」）。', true);
+    return;
+  }
+  forgetGivenBackPw();
+  $('pw').value = '';
+  setUnlockStatus('');
+  clearSetup();
+  newCandidates();
+  setupStep(1);
+  $('unlock').hidden = true;
+  $('setup').hidden = false;
+  // iPhone の「画面の左のはしから右へなぞる」（戻る）で、ページから出ずに開く画面へ戻れるように
+  if (!backPending && history.state?.kagibako !== 'setup') history.pushState({ kagibako: 'setup' }, '');
+}
+/** 作る画面をやめて、開く画面に戻る（作る画面の文字は消す） */
+function leaveSetup(status = '', bad = false, { viaHistory = false } = {}) {
+  if ($('setup').hidden) return;
+  clearSetup();
+  $('setup').hidden = true;
+  $('unlock').hidden = false;
+  setUnlockStatus(status, bad);
+  if (!viaHistory && !backPending && history.state?.kagibako === 'setup') goBack();
+  if (!TOUCH) $('pw').focus();
+}
+function clearSetup() {
+  setupPw = '';
+  setupHiddenAt = 0;
+  for (const id of ['setupPw', 'setupConfirm']) $(id).value = '';
+  $('setupPw').type = 'password';
+  $('setupPwShow').textContent = '表示';
+  $('setupShow').textContent = '';
+  $('setupCandidates').replaceChildren();
+  $('setupWrote').checked = false;
+  $('setupCheck').textContent = '';
+  setSetupStatus('');
+}
+/** 金庫を作る部品がそろっているか（公開した直後に、古い控えの部品が混ざっていないか） */
+const canCreate = () => typeof vaultTools.masterCandidate === 'function' && typeof vault.create === 'function' &&
+  typeof HttpDriveRemote.prototype.createFile === 'function';
+
+function newCandidates() {
+  $('setupCandidates').replaceChildren(...[0, 1, 2].map(() => {
+    const c = vaultTools.masterCandidate();
+    const li = el('li');
+    li.append(el('span', 'cand', c), btn('これにする', () => {
+      $('setupPw').value = c;
+      $('setupPw').type = 'text';   // 選んだものが入ったと分かるように見せる
+      $('setupPwShow').textContent = '隠す';
+      updateSetupCheck();
+    }, { aria: `${c} にする` }));
+    return li;
+  }));
+}
+/** 決めようとしているマスターパスワードの確かめ（Android の A-0 と同じ言い方）。[文, だめか] */
+function setupCheckText(pw) {
+  if (!pw) return ['', false];
+  const c = checkNewMasterPassword(pw);
+  const n = [...pw.normalize('NFC')].length;
+  if (c === 'TOO_SHORT') return [`12文字以上にしてください（いま ${n} 文字）`, true];
+  if (c !== 'OK') return ['使えない文字が入っています（タブ・改行・ごく新しい文字など）', true];
+  if (n < 20) return ['使えますが、20文字以上にするともっと安全です', false];
+  return ['', false];
+}
+function updateSetupCheck() {
+  const [t, bad] = setupCheckText($('setupPw').value);
+  $('setupCheck').textContent = t;
+  $('setupCheck').classList.toggle('bad', bad);
+}
+
+$('setupBtn').addEventListener('click', showSetup);
+$('setupMore').addEventListener('click', newCandidates);
+$('setupPw').addEventListener('input', updateSetupCheck);
+// 欄で Enter（iPhone のキーボードの「開く」「改行」）を押したら「次へ」
+$('setupPw').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); $('setupNext').click(); }
+});
+$('setupPwShow').addEventListener('click', () => {
+  const show = $('setupPw').type === 'password';
+  $('setupPw').type = show ? 'text' : 'password';
+  $('setupPwShow').textContent = show ? '隠す' : '表示';
+});
+$('setupCancel').addEventListener('click', () => leaveSetup());
+$('setupNext').addEventListener('click', () => {
+  const pw = $('setupPw').value;
+  if (!pw) {
+    $('setupCheck').textContent = 'マスターパスワードを決めてください（候補の「これにする」を押すと入ります）。';
+    $('setupCheck').classList.add('bad');
+    return;
+  }
+  if (checkNewMasterPassword(pw) !== 'OK') { updateSetupCheck(); $('setupPw').focus(); return; }
+  setupPw = pw;
+  $('setupShow').textContent = pw;
+  $('setupWrote').checked = false;
+  $('setupConfirm').value = '';
+  setSetupStatus('');
+  setupStep(2);
+});
+$('setupBack').addEventListener('click', () => {
+  if (creating) return;
+  $('setupConfirm').value = '';
+  setSetupStatus('');
+  setupStep(1);
+});
+
+$('setupStep2').addEventListener('submit', e => {
+  e.preventDefault();
+  if (creating || !setupPw) return;
+  const pw = setupPw;
+  if (!$('setupWrote').checked) { setSetupStatus('紙に書き写したら、「紙に書き写しました」に印を付けてください。', true); return; }
+  if ($('setupConfirm').value !== pw) {
+    setSetupStatus('さっきと違います。紙を見ながら、もう一度入れてください（大文字・小文字やハイフンも見てください）。', true);
+    $('setupConfirm').focus();
+    return;
+  }
+  if (!navigator.onLine) { setSetupStatus('インターネットにつながっていません。つながってから、もう一度「金庫を作る」を押してください。', true); return; }
+  if (!initGis()) { setSetupStatus('Google のログイン部品がまだ読み込めていません。少し待ってから、もう一度「金庫を作る」を押してください。', true); return; }
+  // ★作る先の Google アカウントは、必ずその場で選んでもらう（いまつながっているアカウントのまま、黙って作らない。
+  //   「ひらく」で金庫の無い別のアカウントにつないだあとなどに、そのアカウントへ作ってしまわないように）
+  // ★ここより前に await を書かない（Google の小窓がふさがれる）
+  selectAccountNext = true;
+  accessToken = null;
+  const tokenP = requestToken();
+  setSetupStatus(WAIT_GOOGLE);
+  creating = true;
+  for (const id of ['setupCreate', 'setupBack']) $(id).disabled = true;
+  $('setupCreate').textContent = '作っています…';
+  finishCreate(pw, tokenP).finally(() => {
+    creating = false;
+    for (const id of ['setupCreate', 'setupBack']) $(id).disabled = false;
+    $('setupCreate').textContent = '金庫を作る';
+  });
+});
+
+async function finishCreate(pw, tokenP) {
+  try {
+    await tokenP;
+  } catch (e) {
+    setSetupStatus(gisErrorText(e, '金庫を作る'), true);
+    return;
+  }
+  let r;
+  try {
+    r = await vault.create(pw, { onStage: s => setSetupStatus(SETUP_STAGE[s]) });
+  } catch (e) {
+    if (e instanceof VaultError) { setSetupStatus(textOf(e.code), true); return; }
+    if (e instanceof RangeError) { setSetupStatus('マスターパスワードは12文字以上にしてください。「戻る」を押して決め直してください。', true); return; }
+    setSetupStatus(`作れませんでした（${e?.name || e}）。もう一度「金庫を作る」を押してください。`, true);
+    return;
+  }
+  switch (r.kind) {
+    case 'Created':
+      wrongCount = 0;
+      writeKdfCache(r.saltB64, r.iterations);
+      clearSetup();
+      // 作る画面のための「戻る」の記録は、もう要らない（戻っても作る画面は出さない）
+      if (history.state?.kagibako === 'setup') history.replaceState(null, '');
+      showMain(r, `新しい金庫を作りました（Google ドライブの「${FILE_NAME}」）。\n` +
+        '上の「＋ 追加」から、サイト名・ID・パスワードを入れてください。\n' +
+        'マスターパスワードを書いた紙は、なくさないように、人に見られない場所にしまってください。');
+      return;
+    case 'AlreadyExists': {
+      // 前に「金庫を作る」を押したときに作れていて、返事だけ届かなかったなら、いま決めたパスワードで開ける（29文字を打ち直させない）。
+      // 開けなければ、前からある別の金庫なので、そのときのマスターパスワードで開いてもらう
+      setSetupStatus('この Google アカウントには、もう金庫がありました。いま決めたマスターパスワードで開けるか確かめています…');
+      let o = null;
+      try { o = await vault.open(pw); } catch (e) { o = null; }
+      if (o?.kind === 'Opened') {
+        wrongCount = 0;
+        writeKdfCache(o.saltB64, o.iterations);
+        clearSetup();
+        if (history.state?.kagibako === 'setup') history.replaceState(null, '');
+        showMain(o, `金庫を開きました（Google ドライブの「${FILE_NAME}」。前に「金庫を作る」を押したときに、もう作れていました）。\n` +
+          '上の「＋ 追加」から、サイト名・ID・パスワードを入れてください。');
+        return;
+      }
+      leaveSetup('この Google アカウントには、もう金庫がありました。新しくは作らずに、そちらを開きます。\n' +
+        'その金庫を作ったときのマスターパスワードを入れて「ひらく」を押してください。');
+      return;
+    }
+    case 'TrashedExists':
+      // ごみ箱の金庫は30日で消える。新しく作って気づかないまま失わないように、作らずに復元を頼む
+      setSetupStatus(`Google ドライブの「ごみ箱」に、前の金庫（${FILE_NAME}）が入っています。新しくは作りません。\n` +
+        '・前の金庫を使うときは、Google ドライブの「ごみ箱」で「復元」してから、「やめる」→ 前のマスターパスワードを入れて「ひらく」を押してください（ごみ箱のファイルは30日で消えます）。\n' +
+        '・前の金庫が要らないときは、ごみ箱から完全に削除してから、もう一度「金庫を作る」を押してください。', true);
+      return;
+    case 'Multiple': {
+      leaveSetup();
+      const id = await chooseFile(r.files);
+      if (id) vault.chooseFile(id);
+      setUnlockStatus(id
+        ? '選んだ金庫を開きます。その金庫のマスターパスワードを入れて「ひらく」を押してください。'
+        : 'この Google アカウントには、もう金庫が2つ以上あります。使う方のマスターパスワードを入れて「ひらく」を押してください。');
+      return;
+    }
+    case 'Offline':
+      setSetupStatus('インターネットにつながっていません。つながってから、もう一度「金庫を作る」を押してください。', true);
+      return;
+    case 'AuthNeeded':
+      accessToken = null;
+      setSetupStatus('Google とのつながりが切れました。もう一度「金庫を作る」を押してください。', true);
+      return;
+    case 'Throttled':
+      // 作れていて返事だけ届かなかったときは、次に押すと「もう金庫がありました」になる（2つは作らない）
+      setSetupStatus('Google が少し混み合っています。30秒ほど待ってから、もう一度「金庫を作る」を押してください。', true);
+      return;
+    case 'DriveError':
+      setSetupStatus(r.reason === 'storageQuotaExceeded'
+        ? 'Google ドライブの容量がいっぱいで、作れませんでした。いらないファイルを消して空きを作ってから、もう一度「金庫を作る」を押してください。'
+        : `Google ドライブが受け付けませんでした（コード ${r.status}）。しばらくしてから、もう一度「金庫を作る」を押してください。`, true);
+      return;
+    case 'Locked':
+      leaveSetup('金庫を作っている途中で止めました。作れていれば、マスターパスワードを入れて「ひらく」を押すと開けます。');
+      return;
+    default:
+      setSetupStatus(`作れませんでした（${r.kind}）。もう一度「金庫を作る」を押してください。`, true);
+  }
+}
+
+// 作る画面のまま10分以上ほかのアプリに移っていたら、画面のマスターパスワードを消して、最初からにする
+document.addEventListener('visibilitychange', () => {
+  if ($('setup').hidden || creating) return;
+  if (document.visibilityState === 'hidden') { setupHiddenAt = Date.now(); return; }
+  if (setupHiddenAt && Date.now() - setupHiddenAt > 10 * 60_000) {
+    clearSetup();
+    newCandidates();
+    setupStep(1);
+    $('setupCheck').textContent = 'しばらく離れていたので、画面のマスターパスワードを消しました。もう一度決めてください。';
+  }
+  setupHiddenAt = 0;
+});
+
+// ------------------------------------------------------------------
+// 細い画面（iPhone など）: 一覧と詳細を1画面ずつ切り替える（改訂 R-26）
+// ★詳細を開くとき、ブラウザの「戻る」の記録を1つ足す。iPhone の「画面の左のはしから右へなぞる」で
+//   ページから出てしまうと、鍵がかかって、長いマスターパスワードを打ち直すことになるため。
+// ------------------------------------------------------------------
+const NARROW = matchMedia('(max-width: 760px)');
+let detailOpen = false;
+// 前のページ（読み直す前）の「戻る」の記録が残っていたら、印を消しておく。
+// 残したままだと、次の「← 一覧に戻る」で、そのページの外まで戻ってしまう（読み直すと金庫は閉じているので、また鍵がかかる）
+if (history.state?.kagibako) history.replaceState(null, '');
+
+// 自分で history.back() を呼んで、その知らせ（popstate）がまだ届いていない間は true。
+// 届く前に別の詳細や作る画面を開いたとき、遅れて届いた知らせで閉じてしまわないように、届いたら記録を足し直す
+let backPending = false;
+function goBack() { backPending = true; history.back(); }
+
+function openDetail() {
+  if (!NARROW.matches || detailOpen) return;
+  detailOpen = true;
+  $('main').classList.add('detail-open');
+  if (!backPending && history.state?.kagibako !== 'detail') history.pushState({ kagibako: 'detail' }, '');
+  $('detail').scrollTop = 0;
+}
+function closeDetail({ viaHistory = false } = {}) {
+  if (!detailOpen) return;
+  detailOpen = false;
+  $('main').classList.remove('detail-open');
+  if (!viaHistory && !backPending && history.state?.kagibako === 'detail') goBack();
+}
+window.addEventListener('popstate', () => {
+  const s = history.state?.kagibako;
+  if (backPending) {
+    // 自分で呼んだ「戻る」が届いた。その間に開き直していたら、そのための記録を足し直す（閉じない）
+    backPending = false;
+    if (detailOpen) history.pushState({ kagibako: 'detail' }, '');
+    else if (!$('setup').hidden) history.pushState({ kagibako: 'setup' }, '');
+    return;
+  }
+  // 利用者の「戻る」（iPhone の左のはしから右へなぞる）
+  if (detailOpen && s !== 'detail') closeDetail({ viaHistory: true });
+  if (!$('setup').hidden && s !== 'setup' && !creating) leaveSetup('', false, { viaHistory: true });
+});
+
+// ------------------------------------------------------------------
 // W-2 一覧と詳細
 // ------------------------------------------------------------------
 let selectedId = null;
 let revealId = null;
 let revealTimer = null;
 
-function showMain(opened) {
+/** 一覧の画面を出す。lead は、ほかのお知らせより先に出す一言（金庫を作ったときなど） */
+function showMain(opened, lead = null) {
   uiLocked = false;
   $('unlock').hidden = true;
+  $('setup').hidden = true;
   $('main').hidden = false;
   $('search').value = '';
   selectedId = null;
   revealId = null;
+  detailOpen = false;
+  $('main').classList.remove('detail-open');
   lastActivity = Date.now();
   lastStop = null;
   lastConflictHead = null;
@@ -370,10 +703,11 @@ function showMain(opened) {
   render();
   setSync(vault.dirty ? { kind: 'Dirty' } : { kind: 'UpToDate' });
   updateTokenLeft();
-  $('search').focus();
+  // 指で触る端末では、検索欄に入れない（キーボードが出て一覧が隠れる）
+  if (!TOUCH) $('search').focus();
   if (clipNeedsClear) clearLeftoverClip();
   // ロックの前にとっておいたものを戻した。先に下書きの小窓を開き、お知らせは1つにまとめて、いちばん上に出す
-  const notes = [];
+  const notes = lead ? [lead] : [];
   if (opened?.draft && restoreDraft(opened.draft)) notes.push('鍵をかける前に編集していた内容を戻しました。続けて「保存する」を押してください。');
   if (opened?.restored) {
     notes.unshift('鍵をかける前に、まだ保存できていなかった変更を戻しました。いまから Google ドライブに保存します。');
@@ -424,6 +758,9 @@ function render() { renderList(); renderDetail(); }
 
 function renderList() {
   if (!vault.data || uiLocked) return;
+  // 細い画面で詳細を見ている間に、その項目がほかの端末で消された → 一覧に戻す（黙って別の項目の詳細に替えない）
+  const shownItem = selectedId ? vault.data.item(selectedId) : null;
+  if (detailOpen && (!shownItem || shownItem.deleted)) closeDetail();
   const items = visibleItems();
   if (!items.some(it => it.id === selectedId)) { selectedId = items[0]?.id ?? null; revealId = null; }
   const frag = document.createDocumentFragment();
@@ -465,6 +802,7 @@ $('list').addEventListener('click', e => {
     return;
   }
   if (selectedId !== it.id) select(it.id);
+  openDetail();   // 細い画面では、押した項目の詳細へ
 });
 
 function select(id) {
@@ -492,7 +830,8 @@ function renderDetail() {
     f.append(el('div', 'label', label), row);
     return f;
   };
-  const parts = [el('h2', '', it.title)];
+  // 「← 一覧に戻る」は細い画面だけで見える（app.css）
+  const parts = [btn('← 一覧に戻る', () => closeDetail(), { cls: 'backbtn' }), el('h2', '', it.title)];
   parts.push(field('ID', el('span', 'value', it.loginId || '（なし）'),
     [btn('コピー', () => copySecret('ID', it.loginId), { disabled: !it.loginId, aria: 'ID をコピー' })]));
   const shown = revealId === it.id;
@@ -585,7 +924,7 @@ function markPending() {
   if (!clip) return;
   clearInterval(clip.tick);
   clip.pending = true;
-  $('copyText').textContent = `${clip.label}を、まだ消せていません（このページに戻ると消します）`;
+  $('copyText').textContent = `${clip.label}を、まだ消せていません（画面のどこかを押すと消します）`;
 }
 function endClip() {
   if (clip) clearInterval(clip.tick);
@@ -607,6 +946,16 @@ window.addEventListener('focus', () => {
   if (clip?.pending) clearClip();
   else clearLeftoverClip();
 });
+// ★iPhone の Safari などは、画面を触った瞬間にしか、コピーした内容を書き換えさせない（時間がたってから・戻ってきたときは断られる）。
+//   まだ消せていなければ、次に画面を触ったときに消す（改訂 R-26）。触った処理の中ですぐ呼ぶ（await を挟まない）
+function clearOnTouch() {
+  if (!(clip?.pending || clipNeedsClear) || !navigator.clipboard?.writeText) return;
+  navigator.clipboard.writeText('').then(() => {
+    clipNeedsClear = false;
+    if (clip?.pending) endClip();
+  }, () => {});
+}
+for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, clearOnTouch, { capture: true, passive: true });
 
 // ------------------------------------------------------------------
 // W-4 編集・新規
@@ -638,7 +987,10 @@ function fillEdit(id, fields, initial, baseMark) {
   $('fNoSym').checked = false;
   editInitial = initial;
   if (!$('editDlg').open) $('editDlg').showModal();
-  $('fTitle').focus();
+  // 指で触る端末で「編集」のときは、欄に入らない（キーボードが画面の半分を隠す。直したい欄を自分で押してもらう）。
+  // index.html の autofocus で見出しに入るはずだが、ブラウザが使わないときのために、ここでも見出しに入れる
+  if (!TOUCH || !id) $('fTitle').focus();
+  else $('editTitle').focus({ preventScroll: true });
 }
 
 function openEdit(id) {
@@ -740,6 +1092,7 @@ async function saveEdit() {
     selectedId = saved;
     revealId = null;
     render();
+    openDetail();    // 細い画面では、保存した項目の詳細を見せる
     pushNow(true);   // ウェブは「保存」を押したらすぐ Drive に送る（§7.2 W-4）。送れなかったら、理由を小窓で知らせる
   } catch (e) {
     if (e instanceof VaultError) {
@@ -759,6 +1112,7 @@ async function deleteItem(id) {
   try {
     vault.remove(id);
     selectedId = null;
+    closeDetail();   // 細い画面では一覧に戻る
     render();
     pushNow(true);
   } catch (e) {
@@ -860,11 +1214,11 @@ function handleOutcome(o, askedArg = false) {
       accessToken = null;
       updateTokenLeft();
       setSync({ kind: 'AuthNeeded' });
-      if (asked) showMessage('保存できていません（Google との接続が切れました）。変更はこの画面の中にだけあります。上の「つなぎ直す」を押すと、自動で保存します。それまで、このタブを閉じたり PC の電源を切ったりしないでください。');
+      if (asked) showMessage('保存できていません（Google との接続が切れました）。変更はこの画面の中にだけあります。上の「つなぎ直す」を押すと、自動で保存します。それまで、このタブを閉じたり、電源を切ったりしないでください。');
       break;
     case 'Offline':
       setSync({ kind: 'Offline' });
-      if (asked) showMessage('保存できていません（インターネットにつながっていません）。変更はこの画面の中にだけあります。つながったら同期の帯を押してください。それまで、このタブを閉じたり PC の電源を切ったりしないでください。');
+      if (asked) showMessage('保存できていません（インターネットにつながっていません）。変更はこの画面の中にだけあります。つながったら同期の帯を押してください。それまで、このタブを閉じたり、電源を切ったりしないでください。');
       break;
     case 'Throttled':
       setSync({ kind: 'Throttled' });
@@ -879,7 +1233,7 @@ function handleOutcome(o, askedArg = false) {
     case 'NoVault':
       needAccountCheck = true;
       updateTokenLeft();
-      stop('Google ドライブに金庫が見つかりません。スマホと別の Google アカウントでつないでいませんか？ 上の帯の「アカウントを選んでつなぎ直す」を押して、スマホと同じアカウントを選んでください。' +
+      stop('Google ドライブに金庫が見つかりません。金庫を置いたのと別の Google アカウントでつないでいませんか？ 上の帯の「アカウントを選んでつなぎ直す」を押して、金庫を置いたアカウントを選んでください。' +
         '（金庫が消された場合は、この画面の中身は残っていますが、保存はできません）', asked);
       break;
     case 'DriveError':
@@ -901,7 +1255,10 @@ function handleOutcome(o, askedArg = false) {
 function checkSkew() {
   const s = vault.clockSkewMs;
   if (s == null || Math.abs(s) <= 5 * 60_000) { $('skewBand').hidden = true; return; }
-  $('skewBand').textContent = `⚠ この PC の時計が約${Math.round(Math.abs(s) / 60_000)}分ずれています。Windows の「設定 → 時刻と言語 → 日付と時刻」で「時刻を自動的に設定する」をオンにしてください。`;
+  const how = IS_IOS
+    ? '「設定」アプリの「一般」→「日付と時刻」で「自動設定」をオンにしてください。'
+    : 'Windows の「設定 → 時刻と言語 → 日付と時刻」で「時刻を自動的に設定する」をオンにしてください。';
+  $('skewBand').textContent = `⚠ この端末の時計が約${Math.round(Math.abs(s) / 60_000)}分ずれています。${how}`;
   $('skewBand').hidden = false;
 }
 
@@ -966,7 +1323,7 @@ $('conflictDlg').addEventListener('cancel', e => { e.preventDefault(); resolveCo
 function updateTokenLeft() {
   if (!vault.isOpen || uiLocked) return;
   if (needAccountCheck) {
-    $('authText').textContent = 'Google ドライブに金庫が見つかりません。スマホと同じ Google アカウントか確かめてください。';
+    $('authText').textContent = 'Google ドライブに金庫が見つかりません。金庫を置いた Google アカウントか確かめてください。';
     $('reconnectBtn').textContent = 'アカウントを選んでつなぎ直す';
     $('authBand').hidden = false;
   } else if (tokenValid()) {
@@ -1013,13 +1370,20 @@ function onBackToPage() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { onBackToPage(); return; }
   lastActivity = Date.now();
-  if (!uiLocked && vault.isOpen && settings.autoLockMs === 0) lockNow('タブを離れたので、鍵をかけました。');
+  // ★Google につなぎ直す画面を開いている間は除く（iPhone などでは、Google の画面が別のタブで開いて、このタブが隠れるため）。
+  //   ただし2分まで（Google から返事が来ないまま、ずっと鍵がかからなくならないように）
+  const waitingGoogle = tokenWait && Date.now() - tokenWait.since < 120_000;
+  if (!uiLocked && vault.isOpen && settings.autoLockMs === 0 && !waitingGoogle) lockNow('タブを離れたので、鍵をかけました。');
 });
 // 同じタブでほかのページに移ってから「戻る」で帰ってきたとき（ブラウザがページを丸ごと覚えていた場合）
 window.addEventListener('pageshow', e => { if (e.persisted) onBackToPage(); });
 // 同じタブでほかのサイトへ移るとき、ブラウザがページを丸ごと凍らせてとっておく（「戻る」で開いたまま出てくる）なら、
 // 先に鍵をかける（保存できていない変更と下書きは、暗号化してとっておかれる）
-window.addEventListener('pagehide', e => { if (e.persisted && !uiLocked && vault.isOpen) lockNow('ほかのページに移ったので、鍵をかけました。'); });
+window.addEventListener('pagehide', e => {
+  if (e.persisted && !uiLocked && vault.isOpen) lockNow('ほかのページに移ったので、鍵をかけました。');
+  // 金庫を作る画面のマスターパスワードも、凍らせてとっておかれるページに残さない（作っている途中は除く）
+  if (e.persisted && !$('setup').hidden && !creating) leaveSetup('', false, { viaHistory: true });
+});
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') forgetGivenBackPw(); });
 
 // 開いている間は、5分おきに Drive とそろえる（§5.8。見えているときだけ）
@@ -1050,6 +1414,8 @@ function lockNow(reason = '') {
   // ★画面の上の平文も消す（隠れた所に残っているものも）。書き出しのファイルの URL も手放す
   $('list').replaceChildren();
   $('detail').replaceChildren();
+  detailOpen = false;   // 細い画面は、次に開いたとき一覧から（「戻る」の記録は残してよい。押しても一覧のまま）
+  $('main').classList.remove('detail-open');
   $('search').value = '';
   $('exportPw').value = '';
   releaseExportUrl();
@@ -1106,6 +1472,7 @@ document.addEventListener('keydown', e => {
   if ((e.altKey && !e.ctrlKey && lower === 'n') || (e.ctrlKey && !e.shiftKey && !e.altKey && lower === 'n')) { e.preventDefault(); openEdit(null); return; }
   if (k === 'Escape') {
     e.preventDefault();
+    if (detailOpen && NARROW.matches) { closeDetail(); return; }   // 細い画面で詳細を見ているときは、一覧に戻るだけ
     if ($('search').value) { $('search').value = ''; renderList(); renderDetail(); $('search').focus(); } else lockNow();
     return;
   }
@@ -1170,8 +1537,12 @@ function sortedItems() {
     .map(x => x[1]);
 }
 
+// iPhone・iPad では書き出しを出さない（Safari のダウンロード先は、ふつう iCloud Drive。パスワードの入ったファイルが
+// 黙ってクラウドに上がるため。改訂 R-26）。Windows のクリップボードの履歴の注意も、iPhone では出さない
+if (IS_IOS) { $('exportSection').hidden = true; $('clipNoteWin').hidden = true; }
+
 $('sExport').addEventListener('click', () => {
-  if (!vault.isOpen) return;
+  if (!vault.isOpen || IS_IOS) return;
   $('settingsDlg').close();
   if (vault.data.liveItems.length === 0) { showMessage('まだ何も入っていないので、書き出すものがありません。'); return; }
   $('exportPw').value = '';
